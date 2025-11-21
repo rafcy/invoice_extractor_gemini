@@ -1,0 +1,29 @@
+# FastAPI and Web Server
+fastapi==0.109.0
+uvicorn[standard]==0.27.0
+python-multipart==0.0.6
+
+# Pydantic for data validation
+pydantic==2.5.3
+pydantic-settings==2.1.0
+
+# Google Gemini AI
+google-generativeai==0.3.2
+
+# HTTP client for downloading from URLs
+httpx==0.26.0
+
+# Image processing
+Pillow==10.2.0
+pdf2image==1.17.0
+
+# Environment variables
+python-dotenv==1.0.0
+
+# Data processing
+pandas==2.2.0
+
+# Optional: For better development experience
+# pytest==7.4.4
+# black==24.1.1
+# ruff==0.1.14
