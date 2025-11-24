@@ -7,8 +7,8 @@ python-multipart==0.0.6
 pydantic==2.5.3
 pydantic-settings==2.1.0
 
-# Google Gemini AI
-google-generativeai==0.3.2
+# Google Gemini AI (New SDK)
+google-genai>=1.0.0
 
 # HTTP client for downloading from URLs
 httpx==0.26.0
@@ -16,6 +16,7 @@ httpx==0.26.0
 # Image processing
 Pillow==10.2.0
 pdf2image==1.17.0
+imagehash==4.3.1
 
 # Environment variables
 python-dotenv==1.0.0

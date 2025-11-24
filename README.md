@@ -8,7 +8,7 @@ A production-ready FastAPI application for extracting structured data from invoi
 - **Format Support**: Images (JPEG, PNG, WebP) and PDF files
 - **Intelligent Rate Limiting**: Configurable rate limits with automatic batching and delays
 - **Batch Processing**: Process multiple documents with automatic chunking
-- **Caching**: Optional caching for faster repeated requests
+- **Content-Based Caching**: Smart caching by file content hash for optimal batch processing (see [CACHING_IMPROVEMENTS.md](CACHING_IMPROVEMENTS.md))
 - **Type Safety**: Full Pydantic validation for requests and responses
 - **OOP Architecture**: Clean, maintainable code structure with proper separation of concerns
 

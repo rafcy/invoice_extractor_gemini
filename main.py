@@ -4,6 +4,7 @@ Supports images, PDFs, and URLs with rate limiting
 """
 
 import os
+import logging
 from datetime import datetime
 from typing import List, Optional
 from contextlib import asynccontextmanager
@@ -13,6 +14,16 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import base64
+
+# Configure logging
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
+    handlers=[
+        logging.StreamHandler()
+    ]
+)
+logger = logging.getLogger(__name__)
 
 from utils.models import (
     DocumentRequest, DocumentResponse, BatchDocumentRequest,
@@ -28,7 +39,7 @@ load_dotenv()
 # Configuration
 RATE_LIMIT_MAX_PER_MINUTE = int(os.getenv("RATE_LIMIT_MAX_PER_MINUTE", "10"))
 RATE_LIMIT_WINDOW_SECONDS = int(os.getenv("RATE_LIMIT_WINDOW_SECONDS", "60"))
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash")
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash-exp")
 ENABLE_CACHE = os.getenv("ENABLE_CACHE", "true").lower() == "true"
 MAX_CACHE_SIZE = int(os.getenv("MAX_CACHE_SIZE", "100"))
 
@@ -134,22 +145,19 @@ async def process_document(request: DocumentRequest):
     - **mime_type**: MIME type (required for base64)
     - **additional_instructions**: Optional extraction instructions
     """
+    request_start = datetime.now()
+    logger.info("="*80)
+    logger.info("📥 NEW REQUEST: /api/v1/process")
+    logger.info("="*80)
+
     if not document_processor or not rate_limiter:
         raise HTTPException(status_code=500, detail="Service not initialized")
 
-    # Check cache first
-    if ENABLE_CACHE and document_cache:
-        cached_result = document_cache.get(request)
-        if cached_result:
-            return DocumentResponse(
-                status=ProcessingStatus.SUCCESS,
-                data=cached_result,
-                processing_time_ms=0.0  # Cached response
-            )
-
     # Check rate limit
+    step_start = datetime.now()
     if not rate_limiter.can_make_request():
         wait_time = rate_limiter.wait_time_until_available()
+        logger.warning(f"⚠️  Rate limit exceeded. Wait: {wait_time:.1f}s")
         return DocumentResponse(
             status=ProcessingStatus.RATE_LIMITED,
             error=f"Rate limit exceeded. Try again in {wait_time:.1f} seconds",
@@ -158,17 +166,28 @@ async def process_document(request: DocumentRequest):
 
     # Acquire rate limit slot
     await rate_limiter.acquire(1)
+    step_duration = (datetime.now() - step_start).total_seconds() * 1000
+    logger.info(f"⏱️  Rate limit check: {step_duration:.2f}ms")
 
-    # Process document
+    # Process document (caching is handled inside process_document now)
     start_time = datetime.now()
     try:
-        invoice_data = await document_processor.process_document(request)
+        cache = document_cache if ENABLE_CACHE else None
+        logger.info(f"     Cache enabled: {ENABLE_CACHE}")
 
-        # Cache result
-        if ENABLE_CACHE and document_cache:
-            document_cache.set(request, invoice_data)
+        invoice_data = await document_processor.process_document(
+            request,
+            cache=cache
+        )
 
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
+        total_time = (datetime.now() - request_start).total_seconds() * 1000
+
+        logger.info("="*80)
+        logger.info("✅ REQUEST COMPLETE")
+        logger.info(f"⏱️  Processing time: {processing_time:.2f}ms")
+        logger.info(f"⏱️  Total request time: {total_time:.2f}ms")
+        logger.info("="*80)
 
         return DocumentResponse(
             status=ProcessingStatus.SUCCESS,
@@ -178,6 +197,15 @@ async def process_document(request: DocumentRequest):
 
     except Exception as e:
         processing_time = (datetime.now() - start_time).total_seconds() * 1000
+        total_time = (datetime.now() - request_start).total_seconds() * 1000
+
+        logger.error("="*80)
+        logger.error("❌ REQUEST FAILED")
+        logger.error(f"⏱️  Time before error: {processing_time:.2f}ms")
+        logger.error(f"⏱️  Total request time: {total_time:.2f}ms")
+        logger.error(f"     Error: {str(e)}")
+        logger.error("="*80)
+
         return DocumentResponse(
             status=ProcessingStatus.FAILED,
             error=str(e),
@@ -221,48 +249,51 @@ async def process_batch(request: BatchDocumentRequest):
             doc_req.additional_instructions = request.additional_instructions
         processed_requests.append(doc_req)
 
-    # Process function for a single batch
+    # Process function for a single batch - NOW WITH PARALLEL PROCESSING!
     async def process_single_batch(batch_requests: List[DocumentRequest]) -> List[DocumentResponse]:
-        batch_results = []
+        cache = document_cache if ENABLE_CACHE else None
 
-        for req in batch_requests:
+        logger.info(f"🚀 Processing batch of {len(batch_requests)} documents in PARALLEL")
+        batch_start = datetime.now()
+
+        # Process each document as a separate async task
+        async def process_single_doc(req: DocumentRequest, index: int) -> DocumentResponse:
             try:
-                # Check cache
-                cached_result = None
-                if ENABLE_CACHE and document_cache:
-                    cached_result = document_cache.get(req)
+                doc_start = datetime.now()
+                logger.info(f"  [{index+1}/{len(batch_requests)}] Starting document processing...")
 
-                if cached_result:
-                    batch_results.append(DocumentResponse(
-                        status=ProcessingStatus.SUCCESS,
-                        data=cached_result,
-                        processing_time_ms=0.0
-                    ))
-                else:
-                    # Process document
-                    doc_start = datetime.now()
-                    invoice_data = await document_processor.process_document(req)
+                invoice_data = await document_processor.process_document(
+                    req,
+                    cache=cache
+                )
 
-                    # Cache result
-                    if ENABLE_CACHE and document_cache:
-                        document_cache.set(req, invoice_data)
+                processing_time = (datetime.now() - doc_start).total_seconds() * 1000
+                logger.info(f"  [{index+1}/{len(batch_requests)}] ✅ Completed in {processing_time:.2f}ms")
 
-                    processing_time = (datetime.now() - doc_start).total_seconds() * 1000
-
-                    batch_results.append(DocumentResponse(
-                        status=ProcessingStatus.SUCCESS,
-                        data=invoice_data,
-                        processing_time_ms=processing_time
-                    ))
+                return DocumentResponse(
+                    status=ProcessingStatus.SUCCESS,
+                    data=invoice_data,
+                    processing_time_ms=processing_time
+                )
 
             except Exception as e:
-                batch_results.append(DocumentResponse(
+                logger.error(f"  [{index+1}/{len(batch_requests)}] ❌ Failed: {str(e)}")
+                return DocumentResponse(
                     status=ProcessingStatus.FAILED,
                     error=str(e),
                     processing_time_ms=0.0
-                ))
+                )
 
-        return batch_results
+        # Use asyncio.gather to process all documents concurrently
+        import asyncio
+        tasks = [process_single_doc(req, i) for i, req in enumerate(batch_requests)]
+        batch_results = await asyncio.gather(*tasks)
+
+        batch_duration = (datetime.now() - batch_start).total_seconds() * 1000
+        logger.info(f"✅ Batch complete! Processed {len(batch_requests)} documents in {batch_duration:.2f}ms")
+        logger.info(f"   Average: {batch_duration/len(batch_requests):.2f}ms per document")
+
+        return list(batch_results)
 
     # Process in batches with rate limiting
     all_results = await batch_rate_limiter.process_batches(
@@ -284,6 +315,15 @@ async def process_batch(request: BatchDocumentRequest):
         total_processing_time_ms=total_processing_time,
         rate_limit_info=batch_info
     )
+
+
+@app.get("/api/v1/cache/stats", tags=["Cache"])
+async def get_cache_stats():
+    """Get cache statistics"""
+    if not ENABLE_CACHE or not document_cache:
+        raise HTTPException(status_code=400, detail="Cache is not enabled")
+
+    return document_cache.get_stats()
 
 
 @app.delete("/api/v1/cache", tags=["Cache"])
