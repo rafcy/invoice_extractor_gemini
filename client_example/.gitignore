@@ -1,0 +1,36 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Results folder (contains processed output)
+results/
+
+# Don't commit actual invoice images (may contain sensitive data)
+invoices/*.jpg
+invoices/*.jpeg
+invoices/*.png
+invoices/*.gif
+invoices/*.bmp
+invoices/*.webp
+invoices/*.pdf
+
+# Keep the invoices folder structure
+!invoices/.gitkeep
+
+# Virtual environment
+venv/
+env/
+ENV/
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# OS
+.DS_Store
+Thumbs.db
