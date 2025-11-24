@@ -149,17 +149,7 @@ curl -X POST "http://localhost:8000/api/v1/process" \
   }'
 ```
 
-### 4. Upload File
-
-Upload and process a file directly.
-
-```bash
-curl -X POST "http://localhost:8000/api/v1/upload" \
-  -F "file=@invoice.pdf" \
-  -F "additional_instructions=Extract all tax details"
-```
-
-### 5. Batch Processing
+### 4. Batch Processing
 
 Process multiple documents in a single request.
 
@@ -214,15 +204,7 @@ curl -X POST "http://localhost:8000/api/v1/process/batch" \
 }
 ```
 
-### 6. Rate Limit Status
-
-Check current rate limit status.
-
-```bash
-curl http://localhost:8000/api/v1/rate-limit
-```
-
-### 7. Clear Cache
+### 5. Clear Cache
 
 Clear the document cache (if enabled).
 
@@ -348,22 +330,7 @@ if data["status"] == "success":
     print(f"Total: {invoice['totals']['currency']} {invoice['totals']['total']}")
 ```
 
-### Example 2: Upload Local File
-
-```python
-import requests
-
-url = "http://localhost:8000/api/v1/upload"
-
-with open("invoice.pdf", "rb") as f:
-    files = {"file": f}
-    response = requests.post(url, files=files)
-
-data = response.json()
-print(data)
-```
-
-### Example 3: Batch Processing
+### Example 2: Batch Processing
 
 ```python
 import requests
@@ -386,7 +353,7 @@ for result in data['results']:
         print(f"  - {result['data']['invoice_number']}: ${result['data']['totals']['total']}")
 ```
 
-### Example 4: With Base64 Encoding
+### Example 3: With Base64 Encoding
 
 ```python
 import requests
@@ -427,16 +394,6 @@ Common error scenarios:
 - **Invalid API Key**: Check your `GOOGLE_API_KEY` in `.env`
 
 ## Development
-
-### Running Tests
-
-```bash
-# Install dev dependencies
-pip install pytest pytest-asyncio httpx
-
-# Run tests (when available)
-pytest
-```
 
 ### Code Formatting
 
@@ -501,18 +458,6 @@ docker run -p 8000:8000 --env-file .env invoice-api
 - Set `HOST=0.0.0.0` for container environments
 - Configure `RATE_LIMIT_MAX_PER_MINUTE` based on your Gemini API quota
 - Consider disabling cache (`ENABLE_CACHE=false`) in serverless environments
-
-## License
-
-This project is part of the invoice processing suite. See parent directory for license information.
-
-## Support
-
-For issues or questions:
-1. Check the API documentation at `/docs`
-2. Review error messages and logs
-3. Ensure all dependencies are installed
-4. Verify your Google API key is valid
 
 ## Changelog
 

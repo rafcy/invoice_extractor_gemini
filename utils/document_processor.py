@@ -21,11 +21,11 @@ try:
 except ImportError:
     PDF_SUPPORT = False
 
-from models import (
+from utils.models import (
     InvoiceData, VendorInfo, CustomerInfo, LineItem,
     Totals, InvoiceMetadata, DocumentRequest, MimeType
 )
-from exceptions import (
+from utils.exceptions import (
     PDFNotSupportedError, PDFConversionError,
     JSONParseError, DocumentProcessingError
 )
@@ -76,7 +76,7 @@ You are an expert invoice data extraction system. Extract ALL information from t
 CRITICAL RULES:
 1. Return ONLY valid JSON, no markdown, no explanations, no code blocks
 2. If a field is not found, use null for strings or 0 for numbers
-3. Convert all dates to YYYY-MM-DD format
+3. Convert all dates to DD-MM-YYYY format
 4. Extract all line items as an array
 5. Calculate totals if not explicitly stated
 6. Be precise with numbers (use decimals)

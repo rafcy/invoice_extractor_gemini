@@ -14,13 +14,13 @@ from fastapi.responses import JSONResponse
 from dotenv import load_dotenv
 import base64
 
-from models import (
+from utils.models import (
     DocumentRequest, DocumentResponse, BatchDocumentRequest,
     BatchDocumentResponse, HealthResponse, ProcessingStatus,
     RateLimitInfo, MimeType
 )
-from document_processor import DocumentProcessor, DocumentCache
-from rate_limiter import RateLimiter, BatchRateLimiter
+from utils.document_processor import DocumentProcessor, DocumentCache
+from utils.rate_limiter import RateLimiter, BatchRateLimiter
 
 # Load environment variables
 load_dotenv()
@@ -93,23 +93,6 @@ app.add_middleware(
 )
 
 
-@app.get("/", tags=["General"])
-async def root():
-    """Root endpoint with API information"""
-    return {
-        "name": "Invoice Processing API",
-        "version": "1.0.0",
-        "status": "running",
-        "endpoints": {
-            "health": "/health",
-            "process_document": "/api/v1/process",
-            "process_batch": "/api/v1/process/batch",
-            "upload_file": "/api/v1/upload",
-            "rate_limit_status": "/api/v1/rate-limit"
-        }
-    }
-
-
 @app.get("/health", response_model=HealthResponse, tags=["General"])
 async def health_check():
     """Health check endpoint"""
@@ -125,20 +108,20 @@ async def health_check():
     )
 
 
-@app.get("/api/v1/rate-limit", tags=["Rate Limiting"])
-async def get_rate_limit_status():
-    """Get current rate limit status"""
-    if not rate_limiter:
-        raise HTTPException(status_code=500, detail="Rate limiter not initialized")
+# @app.get("/api/v1/rate-limit", tags=["Rate Limiting"])
+# async def get_rate_limit_status():
+#     """Get current rate limit status"""
+#     if not rate_limiter:
+#         raise HTTPException(status_code=500, detail="Rate limiter not initialized")
 
-    usage = rate_limiter.get_current_usage()
-    return {
-        "rate_limit": usage,
-        "configuration": {
-            "max_requests_per_window": RATE_LIMIT_MAX_PER_MINUTE,
-            "window_seconds": RATE_LIMIT_WINDOW_SECONDS
-        }
-    }
+#     usage = rate_limiter.get_current_usage()
+#     return {
+#         "rate_limit": usage,
+#         "configuration": {
+#             "max_requests_per_window": RATE_LIMIT_MAX_PER_MINUTE,
+#             "window_seconds": RATE_LIMIT_WINDOW_SECONDS
+#         }
+#     }
 
 
 @app.post("/api/v1/process", response_model=DocumentResponse, tags=["Processing"])
@@ -230,6 +213,14 @@ async def process_batch(request: BatchDocumentRequest):
     # Get batch info
     batch_info = batch_rate_limiter.get_batch_info(total_docs)
 
+    # Merge global instructions with individual requests
+    processed_requests = []
+    for doc_req in request.documents:
+        # If document doesn't have instructions, use global ones
+        if not doc_req.additional_instructions and request.additional_instructions:
+            doc_req.additional_instructions = request.additional_instructions
+        processed_requests.append(doc_req)
+
     # Process function for a single batch
     async def process_single_batch(batch_requests: List[DocumentRequest]) -> List[DocumentResponse]:
         batch_results = []
@@ -275,7 +266,7 @@ async def process_batch(request: BatchDocumentRequest):
 
     # Process in batches with rate limiting
     all_results = await batch_rate_limiter.process_batches(
-        request.documents,
+        processed_requests,
         process_single_batch
     )
 
@@ -293,75 +284,6 @@ async def process_batch(request: BatchDocumentRequest):
         total_processing_time_ms=total_processing_time,
         rate_limit_info=batch_info
     )
-
-
-@app.post("/api/v1/upload", response_model=DocumentResponse, tags=["Processing"])
-async def upload_file(
-    file: UploadFile = File(...),
-    additional_instructions: Optional[str] = Form(None)
-):
-    """
-    Upload and process a file directly
-
-    - **file**: Invoice image or PDF file
-    - **additional_instructions**: Optional extraction instructions
-    """
-    if not document_processor or not rate_limiter:
-        raise HTTPException(status_code=500, detail="Service not initialized")
-
-    # Validate file type
-    allowed_types = {"image/jpeg", "image/png", "image/webp", "application/pdf"}
-    if file.content_type not in allowed_types:
-        raise HTTPException(
-            status_code=400,
-            detail=f"Unsupported file type: {file.content_type}. Allowed: {allowed_types}"
-        )
-
-    # Check rate limit
-    if not rate_limiter.can_make_request():
-        wait_time = rate_limiter.wait_time_until_available()
-        raise HTTPException(
-            status_code=status.HTTP_429_TOO_MANY_REQUESTS,
-            detail=f"Rate limit exceeded. Try again in {wait_time:.1f} seconds"
-        )
-
-    # Acquire rate limit slot
-    await rate_limiter.acquire(1)
-
-    # Read file and convert to base64
-    file_bytes = await file.read()
-    base64_data = base64.b64encode(file_bytes).decode('utf-8')
-
-    # Create request
-    request = DocumentRequest(
-        base64_data=base64_data,
-        mime_type=MimeType(file.content_type),
-        additional_instructions=additional_instructions
-    )
-
-    # Process document
-    start_time = datetime.now()
-    try:
-        invoice_data = await document_processor.process_document(
-            request,
-            source_identifier=file.filename
-        )
-
-        processing_time = (datetime.now() - start_time).total_seconds() * 1000
-
-        return DocumentResponse(
-            status=ProcessingStatus.SUCCESS,
-            data=invoice_data,
-            processing_time_ms=processing_time
-        )
-
-    except Exception as e:
-        processing_time = (datetime.now() - start_time).total_seconds() * 1000
-        return DocumentResponse(
-            status=ProcessingStatus.FAILED,
-            error=str(e),
-            processing_time_ms=processing_time
-        )
 
 
 @app.delete("/api/v1/cache", tags=["Cache"])

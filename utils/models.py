@@ -57,7 +57,7 @@ class Totals(BaseModel):
     tax_amount: float
     discount: float = 0.0
     total: float
-    currency: str
+    currency: Optional[str] = "USD"
 
 
 class InvoiceMetadata(BaseModel):
